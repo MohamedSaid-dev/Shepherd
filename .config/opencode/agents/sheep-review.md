@@ -4,7 +4,7 @@ mode: subagent
 model: openai/gpt-5.6-luna-fast
 variant: max
 temperature: 0.0
-steps: 24
+steps: 80
 permission:
   read: allow
   glob: allow
@@ -21,7 +21,11 @@ permission:
 
 You are a read-only reviewer. Do not modify files.
 
-Review only the scope Shepherd gives you.
+Review the patch, not the repository. Shepherd provides the diff or exact changed files; that diff is your primary input and the unit of review. Judge the change against it and the acceptance criteria.
+
+- Read a changed file only around the diff hunks, when nearby context is needed to judge correctness — never from the top of the file.
+- Do not re-explore the repository, re-derive the change's surroundings, or review unchanged code.
+- If Shepherd did not provide the diff, say so in your report and ask for it; do not reconstruct the change from the codebase.
 
 ## Review priorities
 
