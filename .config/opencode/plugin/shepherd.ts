@@ -826,25 +826,58 @@ const shepherdPlugin = {
 
       return {
         "permission.ask": async (input, output) => {
+          // Once a session is positively identified as a Sheep, every exception
+          // path must fail closed to "deny" so no Sheep permission prompt leaks
+          // to the user. Before identification (resolution error) or for
+          // non-Sheep sessions, errors stay untouched (normal OpenCode flow).
+          let identifiedSheep = false;
           try {
-            if (input.type !== "bash") {
-              return;
-            }
-
+            const isBash = input.type === "bash";
             const command = permissionCommand(input);
-            if (command === null || command.trim() === "") {
+
+            // Resolve session identity. If resolution fails or yields no agent,
+            // the identity is unresolved and we preserve fail-safe normal
+            // behavior (do not risk affecting other agents).
+            const info = await resolveSession(client, directory, input.sessionID, sessions);
+            const agent = info.agent;
+            const sheep = isSheepAgent(agent);
+
+            // Non-Sheep (or unresolved identity): never mutate output; preserve
+            // the normal OpenCode ask flow. This keeps non-Sheep behavior
+            // untouched and is the fail-safe when identity cannot be resolved.
+            if (!sheep) {
+              return;
+            }
+            identifiedSheep = true;
+
+            // Identified Sheep: no permission prompt may reach the user. OpenCode
+            // cannot delegate a permission request to the parent model, so the
+            // plugin resolves it autonomously. Non-bash asks and missing/empty
+            // commands are denied so no Sheep permission prompt reaches the user.
+            if (!isBash || command === null || command.trim() === "") {
+              output.status = "deny";
+              await appendLedger({
+                kind: "permission.denied",
+                tool: input.type ?? "unknown",
+                sessionID: input.sessionID,
+                agent: agent,
+                ok: false,
+                summary: `deny ${input.type ?? "unknown"}: ${command !== null && command.trim() !== "" ? command : "(missing command)"}`,
+              });
               return;
             }
 
-            const info = await resolveSession(client, directory, input.sessionID, sessions);
-            const decision = bashDecision(info.agent, command);
+            // Identified Sheep + bash + non-empty command: `command` is now
+            // statically narrowed to a non-empty string. Defer to the existing
+            // bashDecision classifier, which remains the safety authority.
+            const decision = bashDecision(agent, command);
             if (decision === "deny") {
               output.status = "deny";
               await appendLedger({
                 kind: "permission.denied",
                 tool: "bash",
                 sessionID: input.sessionID,
-                agent: info.agent,
+                agent: agent,
                 ok: false,
                 summary: `deny bash: ${command}`,
               });
@@ -852,20 +885,24 @@ const shepherdPlugin = {
               output.status = "allow";
               // Auto-allowed: intentionally not recorded to avoid ledger spam.
             } else {
-              // Unresolved Sheep bash ask: telemetry only, never mutate output.
-              // Non-Sheep agents are never logged (do not log non-Sheep).
-              if (isSheepAgent(info.agent)) {
-                await appendLedger({
-                  kind: "permission.ask",
-                  tool: "bash",
-                  sessionID: input.sessionID,
-                  agent: info.agent,
-                  ok: true,
-                  summary: `ask bash: ${command}`,
-                });
-              }
+              // Unclassified Sheep bash ask (identity resolved, command not
+              // allowlisted): deny rather than prompt the user.
+              output.status = "deny";
+              await appendLedger({
+                kind: "permission.denied",
+                tool: "bash",
+                sessionID: input.sessionID,
+                agent: agent,
+                ok: false,
+                summary: `deny bash (unclassified): ${command}`,
+              });
             }
           } catch {
+            // Fail closed only for positively identified Sheep. Pre-identity,
+            // unresolved, and non-Sheep errors remain untouched (normal flow).
+            if (identifiedSheep) {
+              output.status = "deny";
+            }
             return;
           }
         },

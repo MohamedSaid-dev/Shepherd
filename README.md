@@ -1,186 +1,199 @@
-# OpenCode Shepherd — Global Agent Bundle
+<p align="center">
+  <img src="./sheep.png" alt="Shepherd" width="160" />
+</p>
 
-This bundle mirrors the global OpenCode config tree under your home directory.
+<h1 align="center">OpenCode Shepherd</h1>
 
-## Tree
+<p align="center"><strong>A global OpenCode agent bundle: one high-judgment orchestrator that delegates bounded work to a herd of specialized subagents.</strong></p>
 
-```text
-~/
-└── .config/
-    └── opencode/
-        ├── opencode.json
-        ├── agents/
-        │   ├── shepherd.md
-        │   ├── sheep-cheap.md
-        │   ├── sheep-fast.md
-        │   ├── sheep-test.md
-        │   ├── sheep-ui.md
-        │   ├── sheep-review.md
-        │   ├── sheep-search.md
-        │   └── sheep-docs.md
-        ├── command/
-        │   ├── sheeps-models.md
-        │   └── herd.md
-        └── plugin/
-            └── shepherd.ts
-```
+## What is Shepherd?
 
-`/sheeps-models` shows the live model list from `opencode models` and the current herd mapping, then edits the `agent` block in `opencode.json` (single file) and syncs this bundle.
+Shepherd is an OpenCode-only bundle that installs a primary `shepherd` agent plus seven `sheep-*` subagents (eight agents total) into your **global** OpenCode config (`%USERPROFILE%\.config\opencode\`). **Shepherd supports Windows only** — Linux, macOS, and other POSIX systems are unsupported. Shepherd owns architecture, product and design direction, integration, and final review. It routes tightly bounded labor — implementation, UI, tests, search, docs, and review — to cheaper, faster subagents, then verifies every artifact through an independent review gate.
 
-`shepherd` is a `primary` agent, so it appears in the same Tab-cycle as Build and Plan.
+**Why?**
 
-The Sheep are `subagent` workers. Shepherd routes bounded work to them and reviews the result.
+- Keep your own judgment and direction; offload repetitive, mechanical, and parallelizable execution.
+- Parallel dispatch with a mandatory, evidence-based review gate on every produced artifact.
+- A fail-fast permission plugin keeps subagents inside a strict, auditable command grammar.
+
+> Shepherd is a `primary` agent, so it appears in the same tab-cycle as Build and Plan. The Sheep are `subagent` workers.
 
 ## Install
 
-Copy the bundled `.config/opencode/` directory into your home directory.
+> **Windows only.** Shepherd installs on Windows using PowerShell. Linux, macOS, and other POSIX operating systems are not supported — do not follow these steps on an unsupported OS.
 
-If you already have `~/.config/opencode/opencode.json`, **do not overwrite it**. Merge these three things from this bundle's `opencode.json` into your existing one:
+### Option A — let your AI agent do it (recommended)
 
-- `default_agent`
-- `agent`
-- `plugin`
-
-```json
-"default_agent": "shepherd",
-"agent": { "...": "copy the whole agent block from this bundle's opencode.json" },
-"plugin": ["./plugin/shepherd.ts"]
-```
-
-Do not re-add `model`, `variant`, `temperature`, or `steps` to agent `.md` frontmatter - frontmatter silently overrides the `agent` block, and the files no longer carry those fields.
-
-Restart OpenCode after changing agent/config files.
-
-## Models
-
-All runtime settings - model, variant, temperature, steps - live in one place: the `agent` block of `.config/opencode/opencode.json`. The agent `.md` files carry only description, mode, color, permissions, and the prompt. The table below documents the current values (`node tools/herd-models.js` prints them live):
-
-| Agent | Model | Variant |
-| --- | --- | --- |
-| `shepherd` | `openai/gpt-5.6-sol` | `medium` |
-| `sheep-cheap` | `ollama-cloud/deepseek-v4-flash:0731` | `max` |
-| `sheep-fast` | `opencode-go/hy3` | `max` |
-| `sheep-ui` | `openai/gpt-5.6-luna-fast` | `max` |
-| `sheep-test` | `ollama-cloud/deepseek-v4-flash:0731` | `max` |
-| `sheep-review` | `openai/gpt-5.6-luna-fast` | `max` |
-| `sheep-search` | `openai/gpt-5.6-luna-fast` | `low` |
-| `sheep-docs` | `openai/gpt-5.6-luna-fast` | `low` |
-
-Shepherd uses the neutral gray color `#808080` in the agent selector.
-
-These model IDs must exist in your OpenCode provider catalog - `node tools/herd-models.js --check` verifies them against `opencode models`. Change them in the `agent` block of `.config/opencode/opencode.json` if your provider does not expose them; never re-add them to agent `.md` frontmatter.
-
-## Step limits
-
-| Agent | Steps |
-| --- | ---: |
-| `sheep-search` | 50 |
-| `sheep-docs` | 50 |
-| `sheep-cheap` | 60 |
-| `sheep-review` | 80 |
-| `sheep-test` | 100 |
-| `sheep-fast` | 150 |
-| `sheep-ui` | 150 |
-
-Step limits are sized so bounded assignments finish in one run. When a Sheep does reach its limit, it reports a continuation checkpoint. Shepherd resumes or redispatches that same role with only the remaining work instead of completing the labor itself. Step limits and temperatures are set in the `agent` block of `opencode.json`, not in the agent files.
-
-## Execution behavior
-
-Shepherd is instructed to:
-
-- keep architecture, contracts, product judgment, integration decisions, and final validation for itself,
-- delegate project exploration to `sheep-search`,
-- delegate bounded implementation to `sheep-cheap`, `sheep-fast`, or `sheep-ui`,
-- delegate external research to `sheep-docs`, and gate completion on `sheep-review`: every artifact (including Shepherd's own direct edits) still requires actual-diff sheep-review before the task is called done, with the verdict, findings, and their resolution reported to the user - or, only on a captured provider failure of `sheep-review`, the direct verification performed instead,
-- delegate test authoring and narrow validation runs to `sheep-test`,
-- dispatch ready independent tasks together from a streaming task dependency DAG: reaching `done` (after its diff passes independent review) unlocks downstream work and refills slots, with no global wave barrier,
-- move a task `ready → in-flight` only when its task call is actually issued and accepted; artifact tasks reach `review` and then `done` only after the required validation, integration, and independent review pass,
-- once the ready set is finalized, dispatch all independent ready tasks in one tool batch before adding further narrative, subject to actual dependency, question, and capacity constraints,
-- run at most eight Sheep in parallel by default, scaling to at most twelve only when more than eight genuinely independent, exclusively owned ready tasks exist and provider and review/integration capacity support it with a critical-path improvement,
-- track tasks and artifacts lightly: dependencies, ownership, risk, acceptance/validation, producer, and review state,
-- continue partial Sheep assignments promptly when their step limits are reached, without blocking unrelated critical-path tasks, and repartition only the separable, untouched remainder while completed or stateful work stays with its owner,
-- hand out compact self-contained assignment packets that omit empty or inapplicable boilerplate but preserve contracts, scope, acceptance, validation, reporting, and escalation,
-- avoid taking over delegable labor except when subagent tooling is unavailable or the user explicitly requests direct work,
-- avoid broad tests, linting, formatting, builds, and dependency changes during worker execution,
-- run risk-based validation only after integration.
+Copy the prompt below and send it to your own AI assistant. It points the agent at the authoritative, plain-text instructions in [`INSTALL.txt`](./INSTALL.txt).
 
 ```text
-                          ---------
-                    ---------------------
-                 --------------------------
-               --------------------------------
-              ------------------------------------
-             ---------------------------------------
-            *===-------------------------------------
-       **********+-----------------------------------
-    *************+----+*******+----------=-----------
-   **************---*************************=-----++*
-  **************--=****************************----*****+
-  ************---=******************************=--+*******
-   +*******+-----********************************---+*******
-     -=+=-------+*******####*********************+---********+
-     -----------+*******###*************###*******---+********
-    ------------+************************##*******---=*******
-   --------------+*************##**#**************----*****+
-   ---------------+**************##**************+-----
-   -----------------=****************************------
-   --------------------=+**********************--------
-   ---------------------------=***********+=-----------
- -----------------------------------------------------=
-------------------------------------------------------
--------------------------------------------------------
---------------------------------------------------------
---------------------------------------------------------=
----------------------------------------------------------
----------------------------------------------------------
----------------------------------------------------------=
-
+On Windows, use PowerShell to read the authoritative install instructions at https://raw.githubusercontent.com/MohamedSaid-dev/Shepherd/refs/heads/main/INSTALL.txt. Follow those instructions to install Shepherd into my OpenCode global config. If you cannot fetch the raw file, open the INSTALL.txt file in this repository instead. Do NOT overwrite my existing opencode.json: back up any file you change and merge only the Shepherd-owned entries.
 ```
 
-## Permissions
+You can also read the instructions directly: [INSTALL.txt](./INSTALL.txt).
 
-Implementation Sheep (`sheep-cheap`, `sheep-fast`, `sheep-ui`) and `sheep-test` can edit, and run with a scoped bash allowlist. Search/docs/review Sheep are read-only and cannot delegate further.
+### Option B — manual install
 
-| Autoallow | Ask-gated | Hard-denied |
+1. **Back up first.** If `%USERPROFILE%\.config\opencode\opencode.json` already exists, copy it to a backup (for example `opencode.json.shepherd-backup-<timestamp>`). Also back up any existing Shepherd-owned file you will replace.
+2. **Copy only the 11 Shepherd-owned files** — the `agents/`, `command/`, and `plugin/` files, **not** `opencode.json` — into your Windows global config, preserving the directory structure. Use PowerShell and the `%USERPROFILE%` environment variable (in PowerShell, `$env:USERPROFILE`):
+   - `%USERPROFILE%\.config\opencode\` (PowerShell: `$env:USERPROFILE\.config\opencode\`)
+   The exact file list is in [`INSTALL.txt`](./INSTALL.txt) (step 1). Do **not** copy the whole bundled `.config/opencode/` directory into an existing target, as that would overwrite `opencode.json`.
+   **Before copying each file, compare it to any same-name file already at the destination.** An exact match is idempotent — copy it normally. If the content DIFFERS, back up the existing file (step 1) and STOP / ASK before replacing, UNLESS you have already explicitly authorized overwriting customized Shepherd content. Never silently overwrite a customized same-name file.
+3. **Merge `opencode.json` separately** (never overwrite it). Follow the authoritative transactional and type-validation procedure in [`INSTALL.txt`](./INSTALL.txt) (step 5) — do **not** perform a direct in-place edit. That procedure backs up, records a reversible baseline, validates types (target/agent roots are objects, each of the eight source agent values is an object, `plugin` is a string or array of strings), and writes atomically. Merge only these from the bundle's `opencode.json`:
+   - `default_agent` → `"shepherd"`
+   - `agent` → the eight Shepherd entries (the `shepherd` agent and the seven `sheep-*` subagents); preserve any unrelated agents you already have
+   - `plugin` → append `"./plugin/shepherd.ts"` (dedupe; keep any existing plugins)
+4. Restart OpenCode.
+
+See [`INSTALL.txt`](./INSTALL.txt) for the exact, safe merge procedure an agent (or you) should follow.
+
+## Requirements
+
+- **Windows only.** Windows with PowerShell. Linux, macOS, and other POSIX operating systems are not supported.
+- [OpenCode](https://opencode.ai) installed and on your `PATH`.
+- Node.js available (the plugin and the `tools/*.js` utilities run on Node).
+- At least one model provider configured that exposes the model IDs in the [Model configuration](#model-configuration) table — or change the IDs to ones your provider supports.
+- No package installs or dependency changes are required.
+
+## Roles
+
+| Agent | Mode | Role |
 | --- | --- | --- |
-| Read-only git inspection (`status`, `diff`, `log`, `show`, `ls-files`), `rg` searches, read-only PowerShell cmdlets | Arbitrary `node`/`npx`, unknown or malformed commands | Git mutations (`push`, `commit`, `rebase`, `reset`, `merge`, `cherry-pick`, `stash`, `tag`, `clean`, `checkout --`, `restore`, `branch -d/-D`) |
-| Exact `node --check` with exactly one script path, exact `node --version`, and exact repo utility/harness paths (`tools/plugin-harness.mjs`, `tools/herd-report-harness.mjs`, `tools/herd-report.js`, `tools/herd-models.js`) | Expansions, escapes, backslashes, `@`, globs, quote concatenation | Package installs/removals (`npm install`, `npm i`, `npm uninstall/rm`, `pnpm install/add/remove`, `yarn add/install`, `bun add/install`) |
-| Exact package script families (`test`, `lint`, `type`, `typecheck`, `check`, trailing args only after `--`), local-only npx with the flag before the tool (`npx --no-install <playwright test|vitest run|tsc --noEmit|jest|eslint> ...`, eslint without `--fix`) | Writes/removals not hard-denied, redirects/control syntax, builds/watchers/servers/network | `rm -rf` / `rm -fr`, Docker (`docker`, `docker-compose`) |
+| `shepherd` | primary | High-judgment orchestrator. Owns architecture, product/design direction, integration, and final validation. Delegates bounded labor and reviews every result. |
+| `sheep-cheap` | subagent | Trivial, repetitive, mechanical, boilerplate, copy, and small isolated edits. |
+| `sheep-fast` | subagent | General bounded implementation: localized bug fixes, components, hooks, endpoints, medium-complexity coding. |
+| `sheep-ui` | subagent | UI implementation, responsive behavior, styling, interaction states, and accessibility — after Shepherd supplies a design brief. |
+| `sheep-test` | subagent | Bounded test authoring, narrow test execution, and honest failure classification. |
+| `sheep-search` | subagent | Read-only local codebase exploration, discovery, dependency tracing, pattern finding. |
+| `sheep-review` | subagent | Read-only patch, contract, edge-case, security, and acceptance-criteria review. |
+| `sheep-docs` | subagent | Read-only external documentation, dependency, API/version research. |
 
-Auto-allow applies only to normalized strict grammar: exact commands and paths, no substitutions, escapes, backslashes, `@`, globs, or quote concatenation. `;`, `|`, `&&`, `||` are the only chain exception, and every normalized segment must be safe - any denied segment denies the whole chain, and substitution, subshell, redirection, or malformed quoting is never auto-allowed. If the plugin cannot resolve the agent or extract a command string, it makes no policy decision and creates no new ledger record; the normal OpenCode permission flow remains unchanged.
+## Model configuration
 
-## Herd telemetry
+All runtime settings — model, variant, temperature, and steps — live in **one place**: the `agent` block of `%USERPROFILE%\.config\opencode\opencode.json` (in PowerShell, `$env:USERPROFILE\.config\opencode\opencode.json`). The agent `.md` files carry only description, mode, color, permissions, and the prompt. **Never** re-add model fields to agent `.md` frontmatter; frontmatter silently overrides the `agent` block.
 
-After a big run, check herd health from the opencode database:
+| Agent | Model | Variant | Temp | Steps |
+| --- | --- | ---: | ---: | ---: |
+| `shepherd` | `openai/gpt-5.6-sol` | `medium` | – | – |
+| `sheep-cheap` | `ollama-cloud/deepseek-v4-flash:0731` | `max` | 0.0 | 60 |
+| `sheep-fast` | `opencode-go/hy3` | `max` | 0.0 | 150 |
+| `sheep-ui` | `openai/gpt-5.6-luna-fast` | `max` | 0.1 | 150 |
+| `sheep-test` | `ollama-cloud/deepseek-v4-flash:0731` | `max` | 0.0 | 100 |
+| `sheep-review` | `openai/gpt-5.6-luna-fast` | `max` | 0.0 | 80 |
+| `sheep-search` | `openai/gpt-5.6-luna-fast` | `low` | 0.0 | 50 |
+| `sheep-docs` | `openai/gpt-5.6-luna-fast` | `low` | 0.0 | 50 |
 
-```bash
-node tools/herd-report.js --list        # recent shepherd sessions
-node tools/herd-report.js --all         # one-line health summary per session
-node tools/herd-report.js <sessionId>   # full report (default: latest)
+These IDs are **defaults and provider-dependent** — they must exist in your OpenCode provider catalog. Change them in the `agent` block (never in the `.md` files) if your provider does not expose them. The `/sheeps-models` command edits this block and syncs the bundle.
+
+Step limits size bounded assignments to finish in one run; a Sheep that hits its limit returns a continuation checkpoint that Shepherd resumes.
+
+## Usage
+
+| Command | What it does |
+| --- | --- |
+| `/herd [N]` | Live herd status from the plugin ledger (last `N` lines, default 60). |
+| `/sheeps-models [...]` | View or edit the herd model/variant mapping using the live `opencode models` list. |
+| `node "<REPO>/tools/herd-models.js" "<config>"` | Print the agent/model/variant/temp/steps table for the live config at `<config>` (e.g. `%USERPROFILE%\.config\opencode\opencode.json`). |
+| `node "<REPO>/tools/herd-models.js" "<config>" --check` | Validate the model IDs configured in `<config>` against `opencode models`. |
+| `node "<REPO>/tools/herd-report.js" --list` | List recent Shepherd sessions from the OpenCode database. |
+| `node "<REPO>/tools/herd-report.js" --all` | One-line health summary per session. |
+| `node "<REPO>/tools/herd-report.js" "<sessionId>"` | Full report (default: latest session). |
+
+`<REPO>` is the path to your local clone of this repository. The `tools/`
+scripts are **not** installed globally — they only run from a clone (or if you
+fetched them). For `herd-models`, pass your live config path as `<config>` so
+the table and the `--check` validation read the config you actually use.
+
+Restart OpenCode after any change to agent or config files.
+
+## Safety & permissions
+
+The `shepherd` plugin (`plugin/shepherd.ts`) runs inside every OpenCode process and enforces a **fail-fast, autonomous permission policy** for subagents. This is plugin policy — it is resolved inside the plugin, not by delegating a permission request back to the parent model. It is independent of the Windows-only installation support stated elsewhere in this document.
+
+- **Shepherd itself** uses the OpenCode allow-everything permission shorthand (`permission: allow` in its agent frontmatter), so its own tool calls never prompt.
+- **Sheep subagents** never surface a permission prompt to the user. OpenCode cannot delegate a permission request to the parent model, so the plugin resolves every Sheep `permission.ask` autonomously:
+  - **Bash allowlist** (strict normalized grammar): read-only git (`status`, `diff`, `log`, `show`, `ls-files`), `rg` searches, read-only PowerShell cmdlets, exact `node --check`/`--version`/allowlisted repo scripts, package-runner `test`/`lint`/`type`/`typecheck`/`check` script families, and local-only `npx --no-install` for `playwright test`, `vitest run`, `tsc --noEmit`, `jest`, `eslint` (no `--fix`) → **allow**.
+  - **Hard-denied bash** (instant deny): git mutations (`push`, `commit`, `rebase`, `reset`, `merge`, `cherry-pick`, `stash`, `tag`, `clean`, `restore`, `branch -d/-D`, `checkout --`); dependency-management subcommands (`npm install/ci/uninstall/rm/i/add/remove`, `pnpm add/install/remove/update/upgrade`, `yarn add/install/remove/upgrade`, `bun add/install/remove/update/upgrade`); `rm -rf` / `rm -fr`; Docker.
+  - **Everything else for an identified Sheep** — including non-bash asks, missing/empty commands, and any unresolved bash command — is **denied** by the plugin (never sent to the user as a prompt). Each such plugin-resolved denial is recorded in the ledger as `permission.denied` with a useful summary.
+- **Non-Sheep agents and unresolved sessions** are left untouched: the plugin never mutates their `permission.ask` output, so they follow the normal OpenCode ask flow. If a session's identity cannot be resolved, the plugin preserves fail-safe normal behavior rather than risk affecting other agents.
+
+Implementation Sheep (`sheep-cheap`, `sheep-fast`, `sheep-ui`) and `sheep-test` may edit files and run the scoped allowlist above. `sheep-search`, `sheep-docs`, and `sheep-review` are **read-only** and cannot delegate further (`task`/`question` denied). The plugin is exception-safe: once a session is positively identified as a Sheep, any policy-evaluation or telemetry error fails closed to `deny` so no Sheep prompt reaches the user; only an unresolved or non-Sheep identity retains the normal OpenCode ask flow.
+
+## Telemetry & privacy
+
+The plugin appends a live, append-only JSONL ledger of every Sheep edit, bash command, task dispatch, permission decision, and completion to:
+
+```
+%USERPROFILE%\.local\share\opencode\shepherd\ledger.jsonl
+```
+(in PowerShell, `$env:USERPROFILE\.local\share\opencode\shepherd\ledger.jsonl`)
+
+- `/herd` gives a real-time feed built from the ledger.
+- `tools/herd-report.js` analyzes the OpenCode session database for herd health (stall %, concurrency, re-dispatch churn).
+- The ledger is local to your machine, append-only, and has no rotation. Each record stores a truncated (≤300-character) summary — the command string, file path, task description, or serialized tool arguments — plus the agent name and a timestamp. Commands and tool arguments may contain sensitive values you entered, so treat the ledger as private: protect or review it before sharing.
+
+## Repository layout
+
+```text
+%USERPROFILE%\.config\opencode\        (install target — mirrors this repo's .config/opencode/)
+├── opencode.json          # default_agent, agent block, plugin path (merged, not overwritten)
+├── agents/
+│   ├── shepherd.md        # primary orchestrator
+│   ├── sheep-cheap.md
+│   ├── sheep-fast.md
+│   ├── sheep-ui.md
+│   ├── sheep-test.md
+│   ├── sheep-search.md
+│   ├── sheep-review.md
+│   └── sheep-docs.md
+├── command/
+│   ├── sheeps-models.md   # /sheeps-models
+│   └── herd.md            # /herd
+└── plugin/
+    └── shepherd.ts        # ledger + fail-fast bash policy
+
+tools/
+├── herd-models.js         # print / validate the agent model table
+├── herd-report.js         # post-hoc herd health from the OpenCode DB
+├── plugin-harness.mjs
+└── herd-report-harness.mjs
 ```
 
-The report prints the ASCII sheep banner once per invocation, then shows wall vs active sheep time (stall %), worst-stalled assignments, re-dispatch churn, parent idle time, question calls, and peak/average concurrency. The default/full report also details scheduling heuristics derived from child session timestamps: the observed 30-second initial start burst (share of Sheep started within 30s of the first start), start after the most recent prior completion (median and max) - an observed timestamp heuristic, not true slot-refill latency - and peak headroom / average utilization versus the baseline capacity of 8. Capacity 8 is a baseline/default comparison only: the active adaptive ceiling and the ready set are not persisted, so headroom is not proof of wasted capacity. Child records with invalid or missing timestamps are ignored for scheduling and reported as a warning count. A stall % above ~40% means the herd waited more than it worked; check step limits and continuation latency. The existing telemetry remains useful for tuning adaptive concurrency and stall behavior.
+## Troubleshooting
 
-These scheduling figures are heuristics, not exact metrics: ready-state timestamps are not persisted, so the ready-but-undispatched count and the true ready-to-dispatch/refill latency are unavailable and are not reported as exact values.
+- **Ledger empty / `/herd` says plugin not active** — restart OpenCode; the plugin loads at process start.
+- **`node "<REPO>/tools/herd-models.js" "<config>" --check` prints "model check skipped"** — the check shells out to `opencode models`, which needs a configured provider. When no provider is reachable it exits `0` (skipped/unavailable); this is expected and NOT a failure. No action needed.
+- **`node "<REPO>/tools/herd-models.js" "<config>" --check` reports UNKNOWN model IDs (exit `1`)** — one or more configured IDs are not in your provider catalog. This needs action: edit the `agent` block (not the `.md` files) or use `/sheeps-models`, then restart OpenCode.
+- **High stall % (>~40%) in `herd-report.js`** — the herd waited more than it worked; review step limits and continuation latency.
+- **Changes not taking effect** — running sessions keep the already-loaded config; restart OpenCode after editing agents or `opencode.json`.
 
-## Live ledger and `/herd`
+## Safe uninstall
 
-The shepherd plugin (see "Plugins and hooks") appends every Sheep edit, bash command, task dispatch, permission denial, and sheep session completion to a live JSONL ledger:
+Uninstall is **state-aware**: it restores the pre-install state from the backup and baseline report produced at install time (see [`INSTALL.txt`](./INSTALL.txt), steps 3 and 7), and removes only items Shepherd newly added. If the backup or baseline report is missing or ambiguous, STOP — do not guess.
 
-```
-~/.local/share/opencode/shepherd/ledger.jsonl
-```
+1. **Files.** For each of the 11 Shepherd-owned files, restore it from backup if it pre-existed (the baseline records whether it existed and its prior content); otherwise delete it as newly added. Never delete unrelated files.
+   - `agents/shepherd.md`
+   - `agents/sheep-cheap.md`
+   - `agents/sheep-fast.md`
+   - `agents/sheep-ui.md`
+   - `agents/sheep-test.md`
+   - `agents/sheep-search.md`
+   - `agents/sheep-review.md`
+   - `agents/sheep-docs.md`
+   - `command/sheeps-models.md`
+   - `command/herd.md`
+   - `plugin/shepherd.ts`
+2. **`opencode.json` agent keys.** For each of the eight Shepherd agent keys — `shepherd`, `sheep-cheap`, `sheep-fast`, `sheep-ui`, `sheep-test`, `sheep-search`, `sheep-review`, `sheep-docs` — restore the prior value from the baseline if that key pre-existed; otherwise remove it as newly added. Leave unrelated agents untouched.
+3. **`default_agent`.** Restore its prior presence and value from the baseline (re-add it if it was present before, or remove it if it was absent). Do not leave it as `"shepherd"` unless that was the prior value.
+4. **`plugin`.** Restore the `plugin` key exactly to its prior presence, shape, and values from the baseline: if the plugin was absent before install, remove the plugin key; if it was a string, restore that exact string; if it was an array, restore that exact array. Never remove a `"./plugin/shepherd.ts"` path that predated installation — if the baseline shows the path was already present, keep it.
+5. Optionally delete the ledger at `%USERPROFILE%\.local\share\opencode\shepherd\ledger.jsonl`.
+6. Do **not** delete unrelated agents, commands, plugins, or other config keys.
 
-One JSON object per line with fields `ts`, `kind` (`tool.after` | `permission.denied` | `permission.ask` | `sheep.event`), `tool`, `sessionID`, `agent`, `ok`, `summary`. The `permission.ask` kind records Sheep bash commands that fell through to the normal ask flow (including unknown, malformed, redirection, and control syntax); it is additive - existing kinds remain unchanged, so older readers and reports keep working.
+## Known limitations
 
-Run `/herd [N]` in any Shepherd session for a live status report built from the last N ledger lines (default 60): per-agent activity counts, the 10 most recent records, denials, ask bursts, sheep completions, and anomalies. Complements the post-hoc `herd-report.js` database analysis with a real-time feed.
-
-## Plugins and hooks
-
-`plugin/shepherd.ts` runs inside every opencode process (including Sheep subagent sessions) and does three things:
-
-1. **Live ledger** - appends every Sheep edit, write, bash command, and task dispatch to `~/.local/share/opencode/shepherd/ledger.jsonl` (see "Live ledger and `/herd`").
-2. **Fail-fast bash policy** - when a Sheep triggers a permission ask for a bash command, the plugin answers programmatically instead of parking the herd: hard-denied categories (git mutations, package installs like `npm install`/`pnpm add`, `rm -rf`, `docker`) are denied instantly so the Sheep reports back and Shepherd redispatches, with deny precedence over allow. Auto-allow uses strict normalized token grammar: commands are tokenized quote-aware, and only exact families and exact paths match - package-runner scripts (`test`, `lint`, `type`, `typecheck`, `check`, trailing args only after `--`), local-only npx with the flag before the tool (`npx --no-install <playwright test|vitest run|tsc --noEmit|jest|eslint> ...`, eslint without `--fix`), read-only git/rg/PowerShell inspection, and exact node version/check/utility paths - never substring matching and never bare `npx playwright`. Double-quoted or unquoted expansions (`$`, `%`, `!`, `^`, backticks), backslashes, `@`, and unsafe syntax (redirection, control constructs, quote concatenation, malformed quoting) downgrade to ask. Everything else - including watchers, builds/servers/network, `node -e`, arbitrary scripts, writes/removals - falls through to the normal ask flow, and each such fall-through by a Sheep is recorded as a `permission.ask` ledger record so ask bursts are visible in `/herd`. Policy is fail-open: if the agent cannot be resolved or no command string can be extracted, nothing is mutated and no ledger record is created.
-3. **Sheep completion signals** - when a subagent session goes idle or errors, completion is recorded as a `sheep.event` ledger entry only, without writing to interactive stdout, so interactive input stays clean.
-
-The allow/deny categories and the strict normalized parser live in the plugin source - edit and restart opencode to tune them. All hook bodies are exception-safe: a plugin error never breaks a session. The ledger is append-only with no rotation (known limitation).
+- **Model IDs are provider-dependent.** They must exist in your OpenCode provider catalog; change them in the `agent` block if needed.
+- **Windows-only support.** Shepherd installs and runs on Windows with PowerShell. Linux, macOS, and other POSIX operating systems are not supported; do not attempt installation on them.
+- **`herd-models.js --check` is best-effort.** It requires `opencode models` and a reachable provider; it reports "skipped" rather than failing when unavailable.
+- **Ledger is append-only** with no rotation (a known limitation of the plugin).
+- **Scheduling figures are heuristics, not exact metrics.** Ready-state timestamps are not persisted, so true ready-to-dispatch latency is not reported as an exact value.
+- This bundle ships **no license file** and no versioned support policy.

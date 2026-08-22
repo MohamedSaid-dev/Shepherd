@@ -15,16 +15,35 @@
 import { promises as fs } from "node:fs";
 
 // Patch ledger writes to no-ops so pure/hook tests never touch the real ledger.
+// Each patched write captures the JSONL record string so hook tests can assert
+// the ledger kind (e.g. permission.denied) in addition to the write count.
 const _origAppendFile = fs.appendFile;
 const _origMkdir = fs.mkdir;
 let ledgerWrites = [];
+let ledgerThrow = false;
 let fsPatched = true;
 try {
-  fs.appendFile = async () => { ledgerWrites.push("append"); };
+  fs.appendFile = async (_path, data) => {
+    if (ledgerThrow) {
+      throw new Error("forced ledger failure");
+    }
+    ledgerWrites.push(String(data));
+  };
   fs.mkdir = async () => undefined;
   fsPatched = fs.appendFile !== _origAppendFile;
 } catch {
   fsPatched = false;
+}
+
+function lastLedgerKind() {
+  if (ledgerWrites.length === 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(ledgerWrites[ledgerWrites.length - 1]).kind;
+  } catch {
+    return null;
+  }
 }
 
 const pluginUrl = new URL("../.config/opencode/plugin/shepherd.ts", import.meta.url);
@@ -643,18 +662,81 @@ if (fsPatched) {
   const o = await runPermissionAsk("sheep-fast", { type: "bash", sessionID: "s1", metadata: { command: "git push" } });
   hookCheck(o.status === "deny", "hook:sheep-deny", `status=${JSON.stringify(o.status)}`);
   hookCheck(ledgerWrites.length === 1, "hook:sheep-deny-ledger", `writes=${ledgerWrites.length}`);
+  hookCheck(lastLedgerKind() === "permission.denied", "hook:sheep-deny-kind", `kind=${lastLedgerKind()}`);
 } else {
   console.log("SKIP hook:sheep-deny (fs patch unavailable; would touch real ledger)");
 }
-// Sheep unknown safe-to-ask command -> output untouched, exactly one ledger
-// append (telemetry only; ledger write patched away)
+// Sheep unresolved safe-to-ask bash command -> DENIED (no human prompt)
 if (fsPatched) {
   ledgerWrites = [];
   const o = await runPermissionAsk("sheep-fast", { type: "bash", sessionID: "s1", metadata: { command: "ls -la" } });
-  hookCheck(o.status === undefined, "hook:sheep-ask-untouched", `status=${JSON.stringify(o.status)}`);
+  hookCheck(o.status === "deny", "hook:sheep-ask-denied", `status=${JSON.stringify(o.status)}`);
   hookCheck(ledgerWrites.length === 1, "hook:sheep-ask-ledger", `writes=${ledgerWrites.length}`);
+  hookCheck(lastLedgerKind() === "permission.denied", "hook:sheep-ask-kind", `kind=${lastLedgerKind()}`);
 } else {
   console.log("SKIP hook:sheep-ask (fs patch unavailable; would touch real ledger)");
+}
+// Sheep empty command -> DENIED (no human prompt)
+if (fsPatched) {
+  ledgerWrites = [];
+  const o = await runPermissionAsk("sheep-fast", { type: "bash", sessionID: "s1", metadata: { command: "   " } });
+  hookCheck(o.status === "deny", "hook:sheep-empty-command-denied", `status=${JSON.stringify(o.status)}`);
+  hookCheck(ledgerWrites.length === 1, "hook:sheep-empty-command-ledger", `writes=${ledgerWrites.length}`);
+  hookCheck(lastLedgerKind() === "permission.denied", "hook:sheep-empty-command-kind", `kind=${lastLedgerKind()}`);
+} else {
+  console.log("SKIP hook:sheep-empty-command (fs patch unavailable; would touch real ledger)");
+}
+// Sheep missing command -> DENIED (no human prompt)
+if (fsPatched) {
+  ledgerWrites = [];
+  const o = await runPermissionAsk("sheep-fast", { type: "bash", sessionID: "s1", metadata: {} });
+  hookCheck(o.status === "deny", "hook:sheep-missing-command-denied", `status=${JSON.stringify(o.status)}`);
+  hookCheck(ledgerWrites.length === 1, "hook:sheep-missing-command-ledger", `writes=${ledgerWrites.length}`);
+  hookCheck(lastLedgerKind() === "permission.denied", "hook:sheep-missing-command-kind", `kind=${lastLedgerKind()}`);
+} else {
+  console.log("SKIP hook:sheep-missing-command (fs patch unavailable; would touch real ledger)");
+}
+// Sheep non-bash ask -> DENIED (no human prompt)
+if (fsPatched) {
+  ledgerWrites = [];
+  const o = await runPermissionAsk("sheep-fast", { type: "edit", sessionID: "s1", metadata: { filePath: "x.md" } });
+  hookCheck(o.status === "deny", "hook:sheep-non-bash-denied", `status=${JSON.stringify(o.status)}`);
+  hookCheck(ledgerWrites.length === 1, "hook:sheep-non-bash-ledger", `writes=${ledgerWrites.length}`);
+  hookCheck(lastLedgerKind() === "permission.denied", "hook:sheep-non-bash-kind", `kind=${lastLedgerKind()}`);
+} else {
+  console.log("SKIP hook:sheep-non-bash (fs patch unavailable; would touch real ledger)");
+}
+// Sheep malformed bash command (bashDecision -> ask) -> DENIED (no human prompt)
+if (fsPatched) {
+  ledgerWrites = [];
+  const o = await runPermissionAsk("sheep-fast", { type: "bash", sessionID: "s1", metadata: { command: 'git status "unclosed' } });
+  hookCheck(o.status === "deny", "hook:sheep-malformed-bash-denied", `status=${JSON.stringify(o.status)}`);
+  hookCheck(ledgerWrites.length === 1, "hook:sheep-malformed-bash-ledger", `writes=${ledgerWrites.length}`);
+  hookCheck(lastLedgerKind() === "permission.denied", "hook:sheep-malformed-bash-kind", `kind=${lastLedgerKind()}`);
+} else {
+  console.log("SKIP hook:sheep-malformed-bash (fs patch unavailable; would touch real ledger)");
+}
+// Sheep denial where the ledger append (telemetry) throws must still leave
+// status "deny" (fail closed) and must not leak an ask to the user. The throw
+// is forced on the patched appendFile after a positively identified Sheep
+// denial; the hook's catch must keep output.status = "deny".
+if (fsPatched) {
+  ledgerWrites = [];
+  ledgerThrow = true;
+  let threw = false;
+  let o;
+  try {
+    o = await runPermissionAsk("sheep-fast", { type: "bash", sessionID: "s1", metadata: { command: "git push" } });
+  } catch (e) {
+    threw = true;
+  } finally {
+    ledgerThrow = false;
+  }
+  hookCheck(!threw, "hook:sheep-deny-ledger-fail-no-throw", `threw=${threw}`);
+  hookCheck(o !== undefined && o.status === "deny", "hook:sheep-deny-ledger-fail-status", `status=${JSON.stringify(o && o.status)}`);
+  hookCheck(ledgerWrites.length === 0, "hook:sheep-deny-ledger-fail-no-write", `writes=${ledgerWrites.length}`);
+} else {
+  console.log("SKIP hook:sheep-deny-ledger-fail (fs patch unavailable; would touch real ledger)");
 }
 // non-Sheep -> output untouched, no ledger append
 {
@@ -665,7 +747,16 @@ if (fsPatched) {
     hookCheck(ledgerWrites.length === 0, "hook:non-sheep-ledger", `writes=${ledgerWrites.length}`);
   }
 }
-// unresolved agent null -> output untouched, no ledger append
+// non-Sheep non-bash -> output untouched, no ledger append
+{
+  ledgerWrites = [];
+  const o = await runPermissionAsk("shepherd", { type: "edit", sessionID: "s1", metadata: { filePath: "x.md" } });
+  hookCheck(o.status === undefined, "hook:non-sheep-non-bash-untouched", `status=${JSON.stringify(o.status)}`);
+  if (fsPatched) {
+    hookCheck(ledgerWrites.length === 0, "hook:non-sheep-non-bash-ledger", `writes=${ledgerWrites.length}`);
+  }
+}
+// unresolved agent null -> output untouched, no ledger append (fail-safe)
 {
   ledgerWrites = [];
   const o = await runPermissionAsk(null, { type: "bash", sessionID: "s1", metadata: { command: "git push" } });
@@ -674,29 +765,14 @@ if (fsPatched) {
     hookCheck(ledgerWrites.length === 0, "hook:null-agent-ledger", `writes=${ledgerWrites.length}`);
   }
 }
-// unresolved empty command -> output untouched, no ledger append
+// unresolved agent null non-bash -> output untouched, no ledger append (fail-safe)
 {
   ledgerWrites = [];
-  const o = await runPermissionAsk("sheep-fast", { type: "bash", sessionID: "s1", metadata: { command: "" } });
-  hookCheck(o.status === undefined, "hook:empty-command-untouched", `status=${JSON.stringify(o.status)}`);
+  const o = await runPermissionAsk(null, { type: "edit", sessionID: "s1", metadata: { filePath: "x.md" } });
+  hookCheck(o.status === undefined, "hook:null-agent-non-bash-untouched", `status=${JSON.stringify(o.status)}`);
   if (fsPatched) {
-    hookCheck(ledgerWrites.length === 0, "hook:empty-command-ledger", `writes=${ledgerWrites.length}`);
+    hookCheck(ledgerWrites.length === 0, "hook:null-agent-non-bash-ledger", `writes=${ledgerWrites.length}`);
   }
-}
-// missing command -> output untouched, no ledger append
-{
-  ledgerWrites = [];
-  const o = await runPermissionAsk("sheep-fast", { type: "bash", sessionID: "s1", metadata: {} });
-  hookCheck(o.status === undefined, "hook:missing-command-untouched", `status=${JSON.stringify(o.status)}`);
-  if (fsPatched) {
-    hookCheck(ledgerWrites.length === 0, "hook:missing-command-ledger", `writes=${ledgerWrites.length}`);
-  }
-}
-// non-bash type -> output untouched
-{
-  ledgerWrites = [];
-  const o = await runPermissionAsk("sheep-fast", { type: "edit", sessionID: "s1", metadata: { command: "git push" } });
-  hookCheck(o.status === undefined, "hook:non-bash-untouched", `status=${JSON.stringify(o.status)}`);
 }
 // Session idle/error: a child session (parentID non-null, sheep agent, title)
 // must append exactly one sheep.event ledger record and write nothing to

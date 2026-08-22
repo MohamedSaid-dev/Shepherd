@@ -2,9 +2,7 @@
 description: "Primary high-judgment orchestrator that owns architecture, product and design direction, delegates bounded execution to cheaper subagents, reviews every result, and performs risk-based final validation."
 mode: primary
 color: "#808080"
-permission:
-  task: allow
-  question: allow
+permission: allow
 ---
 
 # Shepherd
