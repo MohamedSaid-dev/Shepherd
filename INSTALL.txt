@@ -7,285 +7,167 @@ them exactly. You are an AI agent performing the install on the user's behalf.
 
 Shepherd is an OpenCode-only global agent bundle. It adds one primary agent
 (`shepherd`) and seven `sheep-*` subagents (eight agents total) to the GLOBAL
-OpenCode config (`%USERPROFILE%\.config\opencode\`). It does NOT modify project-local
-configs, and it must NEVER overwrite the user's existing opencode.json as a
-whole.
+OpenCode config. It does NOT modify project-local configs, and it must NEVER
+overwrite the user's existing opencode.json as a whole.
 
-This is NOT a one-command install. It is WINDOWS-ONLY and PowerShell-only.
-If the host operating system is not Windows, STOP and report that the platform
-is unsupported — do not attempt any translation or installation. Read every
-step, back up before writing, and STOP and ask the user before any destructive
-or conflicting action.
+Shepherd supports Windows, macOS, and Linux, provided Node.js and OpenCode are
+available. The canonical install is the dependency-free installer:
+
+    node tools/install.js
+
+This file is part of the Shepherd repository/bundle. The installer resolves its
+source bundle relative to the repository, so it must be run from a clone or
+fetched bundle — it cannot run from this INSTALL.txt alone.
 
 
 1. LOCATE THE BUNDLE
 --------------------
 Find the Shepherd repository on disk. It is the directory that contains this
-INSTALL.txt and a `.config/opencode/` folder.
+INSTALL.txt, a `.config/opencode/` folder (the source bundle), and the
+`tools/` directory (including `tools/install.js`).
 
 - If you have the repository locally, use that path as <REPO>.
-- If you only have this file, fetch the bundle files from the raw URLs:
-      https://raw.githubusercontent.com/MohamedSaid-dev/Shepherd/refs/heads/main/.config/opencode/<path>
-  These URLs are the official instructions for this repository's `main`
-  branch. If you are installing a fork or another branch, deliberately
-  substitute the equivalent verified raw URL for that fork/branch.
-
-The Shepherd-owned files you need (relative to <REPO>) fall into two groups:
-
-  (A) READ-ONLY MERGE INPUT — do NOT copy this file. It is used only as the
-      source for the merge in step 5:
-        .config/opencode/opencode.json
-
-  (B) THE EXACT 11 COPIED FILES — copy these verbatim into the matching
-       structure under `%USERPROFILE%\.config\opencode\` (step 4). There are exactly 11:
-        8 agent markdown files:
-          .config/opencode/agents/shepherd.md
-          .config/opencode/agents/sheep-cheap.md
-          .config/opencode/agents/sheep-fast.md
-          .config/opencode/agents/sheep-ui.md
-          .config/opencode/agents/sheep-test.md
-          .config/opencode/agents/sheep-search.md
-          .config/opencode/agents/sheep-review.md
-          .config/opencode/agents/sheep-docs.md
-        2 command markdown files:
-          .config/opencode/command/sheeps-models.md
-          .config/opencode/command/herd.md
-        1 plugin TypeScript file:
-          .config/opencode/plugin/shepherd.ts
-
-If fetching raw files only, fetch ALL of the files in group (A) AND group (B)
-above, preserving the exact relative `.config/opencode/` paths shown (the
-directory structure must be kept intact). The group (A) opencode.json is used
-only as the read-only merge source — do NOT copy it to the target. The
-`tools/` directory (herd-models.js, herd-report.js, …) is OPTIONAL: it is not
-required for installation and is unavailable in a raw-only fetch unless you
-also fetch those files or clone the repository.
+- Run the installer from within <REPO> (or pass an explicit target config
+  root; see step 2).
 
 
-2. INSPECT THE ENVIRONMENT
---------------------------
-- Verify the host is Windows and that PowerShell is available. If the host OS
-  is not Windows, STOP and report unsupported — do not attempt translation.
-- Resolve the user's home directory using the PowerShell variable
-  `$env:USERPROFILE`. It MUST be non-empty; if `$env:USERPROFILE` is unset or
-  empty, STOP and ask the user. Derive the concrete absolute config root in
-  PowerShell with:
-      $configRoot = Join-Path $env:USERPROFILE '.config\opencode'
-  (The `%USERPROFILE%\.config\opencode\` form used elsewhere is conceptual
-  Windows notation; inside PowerShell use `$configRoot` / `$env:USERPROFILE`.)
-  Derive the config file path as `Join-Path $configRoot 'opencode.json'` BEFORE
-  any write. Confirm the actual path (for example by checking where OpenCode
-  stores config) before writing; do not assume.
-- Note the target config file: `$configRoot\opencode.json` (conceptual Windows
-  form: `%USERPROFILE%\.config\opencode\opencode.json`).
-- Check whether it already exists. If it does, you will MERGE into it (step 5),
-  not replace it.
+2. CHOOSE THE TARGET CONFIG ROOT
+--------------------------------
+The installer writes to a global OpenCode config root resolved in this order:
+
+  1. `--config-dir <path>` if passed (overrides everything).
+  2. The `OPENCODE_CONFIG_DIR` environment variable, if set.
+  3. Otherwise the default: `~/.config/opencode`
+     (e.g. `$HOME/.config/opencode` on Linux/macOS,
+      `%USERPROFILE%\.config\opencode` on Windows).
+
+You normally need no flag: the default is correct when OpenCode stores config
+in `~/.config/opencode`.
 
 
-3. BACK UP SAFELY AND RECORD THE UNINSTALL BASELINE
---------------------------------------------------
-Before changing anything, back up every file you will modify or overwrite:
-- If `%USERPROFILE%\.config\opencode\opencode.json` exists, copy it to
-  `%USERPROFILE%\.config\opencode\opencode.json.shepherd-backup-<timestamp>`
-  (use a date/time stamp, e.g. 2026-08-22T14-30-00).
-- If any target agent/command/plugin file already exists at the destination
-  (e.g. an older `shepherd.md`), back it up alongside, e.g.
-  `%USERPROFILE%\.config\opencode\agents\shepherd.md.shepherd-backup-<timestamp>`.
-Never delete a backup as part of installation.
+3. DRY RUN FIRST (RECOMMENDED)
+------------------------------
+Always preview before writing:
 
-BASELINE (the uninstall baseline = these facts + the backups above): record,
-BEFORE any write, the pre-install state so uninstall can restore it exactly:
-- For each of the 11 exact destination files (group B), whether it already
-  existed at the target and, if so, its prior content (the backup captures it).
-- For each of the eight Shepherd agent keys (shepherd, sheep-cheap, sheep-fast,
-  sheep-ui, sheep-test, sheep-search, sheep-review, sheep-docs): whether it was
-  present in the existing `agent` object and, if so, its prior value.
-- The prior presence and value of `default_agent` (absent, or its value).
-- The prior presence, exact type, and exact values of the `plugin` key (absent,
-  a string, or an array of strings), and whether `"./plugin/shepherd.ts"` was
-  ALREADY present in it before this install.
-Carry these facts into the step 7 report; together with the backups they are
-the reversible uninstall baseline.
+    node tools/install.js --dry-run
+
+This reports the resolved config root, the 11 owned files and their status
+(new / replace / unchanged), the opencode.json merge plan, and any conflicts —
+with ZERO writes. Review the output. If it reports conflicts, see step 6.
 
 
-4. COPY SHEPHERD-OWNED FILES
-----------------------------
-Create the target directories if missing:
-  `%USERPROFILE%\.config\opencode\agents\`
-  `%USERPROFILE%\.config\opencode\command\`
-  `%USERPROFILE%\.config\opencode\plugin\`
-Copy ONLY the Shepherd-owned files from step 1 (group B) into the matching
-structure under `%USERPROFILE%\.config\opencode\`. Do not copy or delete any other files.
-Preserve the existing config of any unrelated agents, commands, or plugins
-already present.
-
-CONFLICTS: Before overwriting any existing same-name file (an agent, command,
-or plugin file already present at the destination), compare it to the bundled
-file. If it DIFFERS, back it up (step 3) and STOP / ASK the user before
-replacing, UNLESS the user has already explicitly authorized updating or
-replacing customized Shepherd content. An EXACT match is idempotent — copy it
-normally. Never silently overwrite a customized Shepherd-owned file.
-
-
-5. MERGE opencode.json (DO NOT OVERWRITE)
------------------------------------------
-Read the bundle's `.config/opencode/opencode.json`. It contains:
-  default_agent: "shepherd"
-  agent: { shepherd, sheep-cheap, sheep-fast, sheep-ui, sheep-test,
-           sheep-search, sheep-review, sheep-docs }
-  plugin: ["./plugin/shepherd.ts"]
-
-Build a merged config from the EXISTING `%USERPROFILE%\.config\opencode\opencode.json`
-(or an empty object if none exists). Follow the transactional write procedure
-below to minimize the risk of leaving a partial or corrupt target config.
-
-a) default_agent: set to "shepherd".
-   (If the existing value differed, report the change to the user.)
-
-b) agent: start from the existing `agent` object (or `{}`). For EACH of the
-   eight Shepherd agents listed above (the `shepherd` agent and the seven
-   `sheep-*` subagents), set that entry to the bundle's value
-   (overwriting those eight keys). Leave every other existing agent entry
-   UNCHANGED.
-
-c) plugin: if the existing `plugin` is a string, treat it as a one-element
-   array. Append `"./plugin/shepherd.ts"` ONLY if it is not already present
-   (dedupe). Preserve all other plugin entries.
-
-d) Preserve ALL other top-level keys (model, provider, mcp, permission, etc.)
-   exactly as they were. Do not add, remove, or alter them.
-
-CONFLICTS: Before applying steps a–d, check the existing config for conflicts.
-A conflict exists only when one of the eight Shepherd `agent` keys (the
-`shepherd` agent and the seven `sheep-*` agents) is present with a value that
-DIFFERS from the bundled value: back up the config (step 3) and STOP / ASK the
-user before replacing that value, UNLESS the user has already explicitly
-authorized updating or replacing customized Shepherd content. An EXACT match
-is idempotent and needs no action. Do NOT silently overwrite customized
-Shepherd-owned config.
-
-`default_agent` differing is EXPECTED, not a conflict: set it to "shepherd"
-(step a) and report the previous value to the user. The existing `plugin`
-entry (string or array) is preserved and `"./plugin/shepherd.ts"` is
-appended/deduped (step c); do NOT treat the absence or difference of the
-overall plugin collection as a conflict.
-
-TYPE VALIDATION (perform BEFORE any write; STOP on failure):
-- Target root: the existing `%USERPROFILE%\.config\opencode\opencode.json`, once parsed,
-  MUST be a non-null, non-array object. (If the file is absent, treat the
-  target root as an empty object — valid.)
-- Source bundle root: the bundle's `.config/opencode/opencode.json` MUST be a
-  non-null, non-array object.
-- Source `agent`: the bundle root's `agent` MUST be a non-null, non-array
-  object.
-- Each of the eight source agent values (the `shepherd` agent and the seven
-  `sheep-*` subagents) MUST be a non-null, non-array object.
-- Existing target `agent`: if present, MUST be a non-null, non-array object.
-- Existing target `plugin`: if present, MUST be a string OR an array whose
-  members are ALL strings (reject arrays containing non-strings, e.g. [42]).
-If any check fails, STOP — do not write, and do not delete the backup.
-
-TRANSACTIONAL WRITE PROCEDURE (perform these steps before writing anything to
-the target file):
-  1. If `%USERPROFILE%\.config\opencode\opencode.json` already exists, parse it as JSON
-     FIRST. If it is present but invalid JSON, STOP — do not write.
-  2. Validate existing types per the TYPE VALIDATION block above (target root,
-     existing `agent`, existing `plugin`). If any type check fails, STOP — do
-     not write.
-  3. Back up the existing config (step 3) and VERIFY the backup file exists and
-     is readable before continuing.
-  4. Build the merged JSON entirely in memory (steps a–d above).
-  5. Write the merged JSON to a UNIQUE temporary file inside the target
-     directory (e.g. `opencode.json.shepherd-tmp-<timestamp>`), NOT directly to
-     `opencode.json`.
-  6. Parse the temp file back and re-validate it, plus these invariants:
-     the temp root is a non-null, non-array object; `default_agent` is
-     "shepherd"; all eight Shepherd agent keys are present in `agent` and each
-     is a non-null, non-array object; `plugin` is a string or an array of
-     strings and `"./plugin/shepherd.ts"` is present in it. If any
-     parse/validation fails, delete the temp file (keep the backup) and STOP.
-  7. Replace the target with a Windows-specific, same-volume mechanism:
-     - Stage the temp file in the SAME directory/volume as the target
-       (e.g. `$configRoot\opencode.json.shepherd-tmp-<timestamp>`).
-     - If the target `opencode.json` ALREADY EXISTS, perform the replacement
-       with a confirmed same-volume operation such as
-       `[System.IO.File]::Replace($tempPath, $targetPath, $null)` — a single
-       .NET operation that atomically swaps the file. The verified backup you
-       created in step 3 remains the rollback copy; do NOT pass it here again.
-       Confirm the API is available in your environment before using it.
-     - If the target `opencode.json` is ABSENT, move the temp file into place
-       with a same-directory `[System.IO.File]::Move($tempPath, $targetPath)`
-       — a single same-volume operation.
-     Do NOT promise universal atomicity: only use a single-operation
-     replacement that your filesystem/API can actually provide safely. The
-     replacement must be a single operation so readers never see a partial
-     file.
-  8. If the filesystem/API cannot provide a safe single-operation replacement
-     (for example, cross-volume moves, or an environment where
-     `[System.IO.File]::Replace`/`[System.IO.File]::Move` is unavailable), STOP
-     and ASK the user — never write the merged content in a way that could
-     leave a partial target config behind.
-  9. On any failure after step 5, remove only the temp file; never delete the
-     backup.
-
-The plugin path is relative to the config directory, so the plugin file must
-reside at `%USERPROFILE%\.config\opencode\plugin\shepherd.ts` (step 4 already placed it).
-
-
-6. VALIDATE
+4. REAL RUN
 -----------
-- Parse the merged opencode.json as JSON; abort and report if it is invalid.
-- Confirm all eight Shepherd agents (the `shepherd` agent and the seven
-  `sheep-*` subagents) are present in `agent`.
-- Confirm `"./plugin/shepherd.ts"` is in `plugin`.
-- Confirm `default_agent` is "shepherd".
-- (Optional, best-effort) The `tools/` scripts are NOT installed globally;
-  they only work if you cloned the repository or explicitly fetched them. From
-  a clone or local repo, run:
-      node "<REPO>/tools/herd-models.js" "<target opencode.json>"
-  to print the table, and
-      node "<REPO>/tools/herd-models.js" "<target opencode.json>" --check
-  to validate model IDs. The --check step shells out to `opencode models` and
-  will report "skipped" (exit 0) when no provider is reachable — that is
-  expected and NOT a failure. Do not block the install on it.
+When the dry run looks correct, perform the real install:
+
+    node tools/install.js
+
+The installer:
+  - Copies the EXACT 11 owned files into the matching structure under the config
+    root, preserving any unrelated agents, commands, or plugins already present.
+    The exact owned files (relative to the config root) are:
+      agents/shepherd.md
+      agents/sheep-cheap.md
+      agents/sheep-fast.md
+      agents/sheep-ui.md
+      agents/sheep-test.md
+      agents/sheep-search.md
+      agents/sheep-review.md
+      agents/sheep-docs.md
+      command/sheeps-models.md
+      command/herd.md
+      plugin/shepherd.ts
+    (8 agent markdown, 2 command markdown, 1 plugin TypeScript.)
+  - Merges opencode.json (never overwrites): sets `default_agent` to
+    "shepherd", replaces the eight Shepherd `agent` entries from the bundle,
+    and appends/dedupes `"./plugin/shepherd.ts"` to `plugin`. All other
+    top-level keys and unrelated agents are preserved exactly.
+  - Validates types before any write (target/agent roots must be objects; each
+    of the eight source agent values must be an object; `plugin` must be a
+    string or an all-string array). On any validation failure it stops and
+    writes nothing.
+  - Creates sibling backups (`<file>.shepherd-backup-<timestamp>`) for any
+    existing owned file it will replace, and for opencode.json if it will
+    change.
+  - Writes a machine-readable `shepherd-baseline-<timestamp>.json` recording
+    the pre-install state (per-file existence, prior agent values, prior
+    `default_agent` and `plugin` presence/shape, and backup paths) so the
+    install is reversibly uninstallable. The baseline is written only when
+    changes actually occur.
+  - Performs ZERO writes on a no-op rerun: if every owned file is already
+    identical and opencode.json is already merged, it writes nothing, creates
+    no backups, and reports no changes.
+
+
+5. VALIDATE
+-----------
+After a real run, the installer prints a summary (config root, file counts,
+backups, baseline path). Optionally, from a clone, verify the model table:
+
+    node tools/herd-models.js "<config root>/opencode.json"
+    (e.g. node tools/herd-models.js ~/.config/opencode/opencode.json)
+
+    node tools/herd-models.js "<config root>/opencode.json" --check
+
+`--check` invokes `opencode models` to validate configured model IDs. When no
+provider is reachable it reports "skipped" (exit 0) — that is expected and NOT
+a failure. Do not block the install on it.
+
+Restart OpenCode for the new agents and plugin to load.
+
+
+6. CONFLICTS AND --force
+-----------------------
+The installer detects conflicts: an owned file that DIFFERS from the bundled
+file, or a Shepherd `agent` entry whose value DIFFERS from the bundle. On a
+conflict it STOPS before any write and reports the conflicting items.
+
+`--force` is EXPLICIT authorization to replace differing Shepherd-owned files
+and agent entries after backups are taken. It is NOT recommended by default.
+Only use it when the user has clearly authorized overwriting customized
+Shepherd content. Never use it to bypass unrelated-config protection.
+
+    node tools/install.js --force
 
 
 7. REPORT CHANGES
 -----------------
 Tell the user, concisely:
-- The backup location(s) you created.
-- The files you copied.
-- The uninstall baseline (step 3): for each of the 11 destination files
-  whether it pre-existed; for each of the eight agent keys whether it pre-existed
-  and its prior value; the prior `default_agent` presence/value; the prior
-  `plugin` presence, exact type/values, and whether `"./plugin/shepherd.ts"`
-  was already present (i.e. the plugin path was added by this install or was
-  already present).
-- That you merged (not overwrote) opencode.json, and what changed
-  (default_agent set to shepherd; eight Shepherd agent entries (shepherd plus
-  the seven `sheep-*`) merged; plugin path appended/deduped).
-- That model IDs are defaults and provider-dependent; they may need adjusting
-  via `/sheeps-models` if their provider does not expose them.
-- That they must RESTART OpenCode for the new agents and plugin to load.
+  - The backup location(s) created.
+  - The files copied and their status (new / replaced / unchanged).
+  - That opencode.json was merged (not overwritten) and what changed
+    (default_agent set to shepherd; eight Shepherd agent entries merged;
+    plugin path appended/deduped).
+  - The baseline file path (for reversible uninstall).
+  - That model IDs are defaults and provider-dependent; they may need
+    adjusting via `/sheeps-models` if the provider does not expose them.
+  - That they must RESTART OpenCode for the new agents and plugin to load.
 
 
 8. STOP AND ASK BEFORE
-----------------------
+---------------------
 Do NOT proceed if you encounter:
-- A situation that would require overwriting the whole opencode.json.
-- Conflicting or ambiguous instructions, missing context, or a public-contract
-  decision you cannot make safely.
-- Destructive operations beyond the scoped backup + merge described here
-  (e.g. deleting unrelated config, force-resetting git, removing other agents).
-- A protected area edit (auth, billing, secrets, migrations, infrastructure,
-  CI/CD, lockfiles, public APIs) not explicitly authorized by the user.
+  - A situation that would require overwriting the whole opencode.json.
+  - Conflicting or ambiguous instructions, missing context, or a public-contract
+    decision you cannot make safely.
+  - Operations beyond the scoped backup + merge described here (e.g. deleting
+    unrelated config, force-resetting git, removing other agents).
+  - A protected area edit (auth, billing, secrets, migrations, infrastructure,
+    CI/CD, lockfiles, public APIs) not explicitly authorized by the user.
 In any of these cases, STOP, explain the conflict, and ask the user before
 doing anything further.
 
 
-9. BRANCH / URL NOTE
---------------------
-The official instructions above target this repository's `main` branch
-(https://github.com/MohamedSaid-dev/Shepherd). The raw URLs in step 1 are
-canonical for that branch. Only when installing a fork or another branch,
-deliberately substitute the equivalent verified raw URL for that fork/branch.
+9. UNINSTALL
+------------
+There is no automated uninstaller. Uninstall is state-aware and reversible from
+the `shepherd-baseline-*.json` written at install time (step 4). If the baseline
+is missing or ambiguous, STOP — do not guess. Apply these guards: restore a
+pre-existing changed file only after verifying its current content still matches
+the installed bundle (if it differs — a post-install user edit — STOP and back it
+up/retry only after asking, never overwrite blindly); leave pre-existing
+unchanged files (no backup) untouched; delete a newly added file only if it
+still matches installed content, otherwise STOP/ask. For opencode.json, restore
+baseline values only after detecting no post-install changes; otherwise STOP and
+merge manually from the baseline without deleting user changes. See README.md
+"Safe uninstall" for the exact procedure.

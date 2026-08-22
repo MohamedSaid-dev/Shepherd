@@ -201,6 +201,33 @@ const decisionCases = [
   allow("sheep-fast", "Write-Output hi"),
   allow("sheep-fast", "Write-Host hi"),
 
+  // allow: exact POSIX/cross-platform read-only executables (case-sensitive)
+  allow("sheep-fast", "cat foo.txt"),
+  allow("sheep-fast", "cat -n foo.txt"),
+  allow("sheep-fast", "test -f foo.txt"),
+  allow("sheep-fast", "sha256sum foo.txt"),
+  allow("sheep-fast", "shasum foo.txt"),
+  allow("sheep-fast", "realpath foo.txt"),
+  allow("sheep-fast", "head -n 5 foo.txt"),
+  allow("sheep-fast", "tail -n 5 foo.txt"),
+  allow("sheep-fast", "pwd"),
+  allow("sheep-fast", "wc -l foo.txt"),
+  // ask: uppercase / mixed-case variants (POSIX is case-sensitive)
+  ask("sheep-fast", "CAT foo.txt"),
+  ask("sheep-fast", "Ls -la"),
+  ask("sheep-fast", "PWD"),
+  ask("sheep-fast", "Sha256sum foo.txt"),
+  // ask: suffix/prefix lookalikes remain ask
+  ask("sheep-fast", "catx foo.txt"),
+  ask("sheep-fast", "scat foo.txt"),
+  ask("sheep-fast", "lsx -la"),
+  ask("sheep-fast", "wcx -l foo.txt"),
+  ask("sheep-fast", "testx -f foo.txt"),
+  // ask: path-qualified binaries remain ask
+  ask("sheep-fast", "/bin/cat foo.txt"),
+  ask("sheep-fast", "bin/cat foo.txt"),
+  ask("sheep-fast", "./cat foo.txt"),
+
   // allow: node version probe / syntax check / harness & utility scripts
   allow("sheep-fast", "node --version"),
   allow("sheep-fast", "node -v"),

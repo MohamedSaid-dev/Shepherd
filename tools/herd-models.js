@@ -49,7 +49,11 @@ const rows = Object.entries(agents)
 let modelList = '';
 let checkRows;
 if (doCheck) {
-  const res = spawnSync('opencode models', { encoding: 'utf8', shell: true, timeout: 60000 });
+  const res = spawnSync('opencode', ['models'], {
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+    timeout: 60000,
+  });
   if (res.error || res.status !== 0) {
     const reason = res.error?.message ?? `exit code ${res.status}`;
     console.error(`model check skipped: ${reason}`);

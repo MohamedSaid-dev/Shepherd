@@ -66,6 +66,24 @@ const PS_READONLY = [
   "Write-Host",
 ] as const;
 
+// Exact POSIX/cross-platform read-only executables safe for Sheep autonomy
+// (argv0 only, case-sensitive — POSIX names are case-sensitive). Prefix
+// lookalikes, suffix lookalikes, and path-qualified binaries (e.g. /bin/cat)
+// remain ask. `ls` is intentionally excluded to preserve the frozen `ls -la`
+// -> ask decision. No shell syntax, globs, or write-capable commands are
+// included.
+const POSIX_READONLY = [
+  "cat",
+  "test",
+  "sha256sum",
+  "shasum",
+  "realpath",
+  "head",
+  "tail",
+  "pwd",
+  "wc",
+] as const;
+
 // Exact repository-relative node scripts allowed to be executed directly.
 // Normalized to forward slashes; no basename/keyword matching, no absolute or
 // outside-repo paths, no arbitrary scripts.
@@ -589,6 +607,15 @@ export function classifySegment(argv: string[]): "allow" | "deny" | "ask" {
   // PowerShell read-only cmdlets (case-insensitive argv0).
   const lower0 = a0.toLowerCase();
   if ((PS_READONLY as readonly string[]).some((p) => p.toLowerCase() === lower0)) {
+    return "allow";
+  }
+
+  // Exact POSIX/cross-platform read-only executables (case-sensitive argv0).
+  // POSIX names are case-sensitive, so uppercase or mixed-case variants ask.
+  // Prefix/suffix lookalikes and path-qualified binaries (e.g. /bin/cat) are
+  // not in this list and therefore remain ask. `ls` is excluded to preserve
+  // the frozen `ls -la` -> ask decision.
+  if ((POSIX_READONLY as readonly string[]).includes(a0)) {
     return "allow";
   }
 
