@@ -1,10 +1,6 @@
 ---
 description: "UI implementation worker for styling, responsive layouts, interaction states, accessibility, and component polish. Use only after Shepherd has supplied the visual direction and design brief."
 mode: subagent
-model: openai/gpt-5.6-luna-fast
-variant: max
-temperature: 0.1
-steps: 150
 permission:
   read: allow
   glob: allow

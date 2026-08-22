@@ -1,10 +1,6 @@
 ---
 description: "Cheap bounded implementation worker for trivial, repetitive, mechanical, boilerplate, copy, and small isolated code edits. Use only when Shepherd has already made the decisions."
 mode: subagent
-model: ollama-cloud/deepseek-v4-flash:0731
-variant: max
-temperature: 0.0
-steps: 60
 permission:
   read: allow
   glob: allow

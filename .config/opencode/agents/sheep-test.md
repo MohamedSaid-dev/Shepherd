@@ -1,10 +1,6 @@
 ---
 description: "Test worker that authors and runs bounded tests and targeted validation for a specific change, classifies failures honestly, and reports evidence. Use after sheep-fast/sheep-ui implementation, or for narrow post-integration validation runs."
 mode: subagent
-model: ollama-cloud/deepseek-v4-flash:0731
-variant: max
-temperature: 0.0
-steps: 100
 permission:
   read: allow
   glob: allow

@@ -1,10 +1,6 @@
 ---
 description: "Read-only patch reviewer for correctness, contracts, edge cases, security, maintainability, scope discipline, and Shepherd acceptance criteria."
 mode: subagent
-model: openai/gpt-5.6-luna-fast
-variant: max
-temperature: 0.0
-steps: 80
 permission:
   read: allow
   glob: allow

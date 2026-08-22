@@ -1,10 +1,6 @@
 ---
 description: "Fast general implementation worker for bounded feature work, localized bug fixes, components, hooks, endpoints, and medium-complexity coding after Shepherd has fixed the contracts."
 mode: subagent
-model: openai/gpt-5.3-codex-spark
-variant: max
-temperature: 0.0
-steps: 150
 permission:
   read: allow
   glob: allow
